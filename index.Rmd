@@ -1,0 +1,136 @@
+---
+title:
+author:
+site: bookdown::bookdown_site
+documentclass: book
+bibliography: [book.bib, packages.bib]
+biblio-style: apalike
+link-citations: yes
+#description: "This is a minimal example of using the bookdown package to write a book. The output format for this example is bookdown::gitbook."
+github-repo: childpovertyactionlab/wic-participation-reports
+favicon: "images/favicon.ico"
+---
+
+# Trust Her Webmap {-}
+
+```{r, include = FALSE}
+library(googlesheets4)
+library(tidyverse)
+library(sf)
+library(tidycensus)
+library(leaflet)
+library(mapboxapi)
+library(fasterize)
+
+#Clinics
+TrustHerClinic <- range_read("https://docs.google.com/spreadsheets/d/1QSeMpSoZRFPMW4l4P3k0LE_brDKARhGXrGgrkD83FsQ/edit#gid=472929183", sheet = "Clinic Sites Master") %>%
+  st_as_sf(., coords = c("Longitude", "Latitude"), crs = 4326)
+#DART Rail stops
+DART_Rail <- st_read("E:/CPAL Dropbox/Data Library/DART/LightRailStations.shp") %>%
+  st_transform(crs = 4326)
+
+#DART Bus stops
+DART_Bus <- st_read("E:/CPAL Dropbox/Data Library/DART/BusStops_2018.shp") %>%
+  st_transform(crs = 4326)
+
+#Drive Time
+th_iso <- mb_isochrone(TrustHerClinic,
+                       profile = "driving",
+                       time = 1:15)
+
+iso_pal <- colorBin("BuPu", th_iso$time, 3, na.color = "transparent")
+
+isos_proj <- st_transform(th_iso, 32615)
+
+template <- raster(isos_proj, resolution = 100)
+
+iso_surface <- fasterize(isos_proj, template, field = "time", fun = "min")
+
+#WRA
+variables <- load_variables(year = 2019, dataset = "acs5/subject")
+
+acs_var <- c(women_tot = "S0101_C05_001",
+         women_15t44 = "S0101_C05_024", #total women between 15-44
+         women_45t49 = "S0101_C05_011" #total women between 45-49
+)
+
+WRA <- get_acs(geography = "tract",
+               state = "TX",
+               county = "Dallas County",
+               variables = acs_var,
+               year = 2019,
+               output = "wide",
+               geometry = TRUE,
+               ) %>%
+  mutate(women_15t49 = women_15t44E+women_45t49E,
+         women_per = round(women_15t49/women_totE, digits = 3)*100)
+
+wra_pal <- colorBin("BuPu", WRA$women_per, 5, pretty = TRUE)
+
+```
+
+Trust Her webmap for internal use only.
+Webmap contains toggle selections in order to turn various datasets on or off dependent on need. 
+
+* **Trust Her Clinics:** Locations of current Trust Her clinics based on location and clinic system.
+
+* **Car Travel Time:** Raster layer visualizing the average travel time to a Trust Her clinic within a 15 minute drive time.
+
+* **Women (15 to 49):** Census tracts layer visualizing women of reproductive age (between 15 to 49 years old) across Dallas County.
+
+* **DART Bus:** Locations of DART bus stops across Dallas County.
+
+* **DART Rail:** Locations of DART rail stations across Dallas County.
+
+```{r, fig.height=7, fig.width=7, echo=FALSE, message=FALSE, warning=FALSE}
+cpal_style <- "https://api.mapbox.com/styles/v1/owencpal/ckecb71jp22ct19qc1id28jku/tiles/256/{z}/{x}/{y}@2x?access_token=pk.eyJ1Ijoib3dlbmNwYWwiLCJhIjoiY2tlYnR3emdxMGNhZzMwb2EzZWR4ajloNCJ9.P7Mujz8F3Rssq5-Q6dcvMw"
+
+map_attr <- "© <a href='https://www.mapbox.com/map-feedback/'>Mapbox</a> Basemap © <a href='https://childpovertyactionlab.org/'>Child Poverty Action Lab</a>"
+
+leaflet() %>%
+  setView(lng = -96.7970, lat = 32.7767, zoom = 10) %>%
+  addTiles(urlTemplate = cpal_style, attribution = map_attr) %>%
+  addRasterImage(iso_surface, 
+                 colors = iso_pal, 
+                 opacity = 0.6,
+                 group = "Car Travel Time") %>%
+  addLegend(values = th_iso$time, pal = iso_pal,
+            title = "Drive Minutes to Clinic",
+            position = "bottomright",
+            group = "Car Travel Time") %>%
+  addPolygons(data = WRA,
+              stroke = FALSE, 
+              smoothFactor = 0.2, 
+              fillOpacity = 0.6,
+              color = wra_pal,
+              group = "Women (15 to 49)") %>%
+  addLegend(values = WRA$women_per, pal = wra_pal,
+            position = "bottomright",
+            title = "Percent Women (15 to 49)",
+            group = "Women (15 to 49)") %>%
+  addCircleMarkers(data = TrustHerClinic,
+                   stroke = FALSE,
+                   radius = 6,
+                   fillOpacity = 1,
+                   fillColor = "#008097",
+                   label = paste(TrustHerClinic$Clinic, " ", TrustHerClinic$System),
+                   group = "Trust Her Clinics") %>%
+  addCircleMarkers(data = DART_Rail,
+                   stroke = FALSE,
+                   radius = 4,
+                   fillOpacity = 1,
+                   fillColor = "#2f2f2f",
+                   group = "DART Station") %>%
+  addCircleMarkers(data = DART_Bus,
+                   stroke = FALSE,
+                   radius = 1,
+                   fillOpacity = 1,
+                   fillColor = "#2f2f2f",
+                   group = "DART Bus") %>%
+  addLayersControl(
+    #baseGroups = c("Car Travel Time", "Women (15 to 49)"),
+    overlayGroups = c("Trust Her Clinics", "Car Travel Time", "Women (15 to 49)", "DART Bus", "DART Station"),
+    position = "topright",
+    options = layersControlOptions(collapsed = FALSE)) %>%
+  hideGroup(c("DART Bus", "DART Station", "Women (15 to 49)"))
+```
