@@ -36,6 +36,7 @@ DART_Bus <- st_read("E:/CPAL Dropbox/Data Library/DART/BusStops_2018.shp") %>%
 #Drive Time
 th_iso <- mb_isochrone(TrustHerClinic,
                        profile = "driving",
+                       denoise = 0.25,
                        time = 1:15)
 
 iso_pal <- colorBin("BuPu", th_iso$time, 3, na.color = "transparent")
@@ -63,10 +64,10 @@ WRA <- get_acs(geography = "tract",
                geometry = TRUE,
                ) %>%
   mutate(women_15t49 = women_15t44E+women_45t49E,
-         women_per = round(women_15t49/women_totE, digits = 3)*100)
+         women_per = round(women_15t49/women_totE, digits = 3)*100)  %>%
+  st_transform(crs = 4326)
 
-wra_pal <- colorBin("BuPu", WRA$women_per, 5, pretty = TRUE)
-
+wra_pal <- colorBin("BuPu", domain = WRA$women_per, bins = 5)
 ```
 
 Trust Her webmap for internal use only.
@@ -74,7 +75,7 @@ Webmap contains toggle selections in order to turn various datasets on or off de
 
 * **Trust Her Clinics:** Locations of current Trust Her clinics based on location and clinic system.
 
-* **Car Travel Time:** Raster layer visualizing the average travel time to a Trust Her clinic within a 15 minute drive time.
+* **Car Travel Time:** Raster layer visualizing the average travel time to a Trust Her clinic within a 15 minute drive time. This layer does not account for traffic and all travel times should be evaluated based on that caveat.
 
 * **Women (15 to 49):** Census tracts layer visualizing women of reproductive age (between 15 to 49 years old) across Dallas County.
 
@@ -102,7 +103,7 @@ leaflet() %>%
               stroke = FALSE, 
               smoothFactor = 0.2, 
               fillOpacity = 0.6,
-              color = wra_pal,
+              fillColor = ~wra_pal(women_per),
               group = "Women (15 to 49)") %>%
   addLegend(values = WRA$women_per, pal = wra_pal,
             position = "bottomright",
@@ -128,7 +129,6 @@ leaflet() %>%
                    fillColor = "#2f2f2f",
                    group = "DART Bus") %>%
   addLayersControl(
-    #baseGroups = c("Car Travel Time", "Women (15 to 49)"),
     overlayGroups = c("Trust Her Clinics", "Car Travel Time", "Women (15 to 49)", "DART Bus", "DART Station"),
     position = "topright",
     options = layersControlOptions(collapsed = FALSE)) %>%
