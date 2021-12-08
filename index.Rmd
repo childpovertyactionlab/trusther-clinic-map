@@ -26,18 +26,25 @@ library(fasterize)
 TrustHerClinic <- range_read("https://docs.google.com/spreadsheets/d/1QSeMpSoZRFPMW4l4P3k0LE_brDKARhGXrGgrkD83FsQ/edit#gid=472929183", sheet = "Clinic Sites Master") %>%
   st_as_sf(., coords = c("Longitude", "Latitude"), crs = 4326)
 #DART Rail stops
-DART_Rail <- st_read("E:/CPAL Dropbox/Data Library/DART/LightRailStations.shp") %>%
+DART_Rail <- st_read("C:/Users/micha/CPAL Dropbox/Data Library/DART/LightRailStations.shp") %>%
   st_transform(crs = 4326)
 
 #DART Bus stops
-DART_Bus <- st_read("E:/CPAL Dropbox/Data Library/DART/BusStops_2018.shp") %>%
+DART_Bus <- st_read("C:/Users/micha/CPAL Dropbox/Data Library/DART/BusStops_2018.shp") %>%
   st_transform(crs = 4326)
+
+#Teens Births 2018
+TeenBirths <- st_read("C:/Users/micha/CPAL Dropbox/Basic Needs/04_Projects/Teen Births/Data/TeenBirths.gpkg", layer = "Teen Births") %>%
+  st_transform(crs = 4326)
+
+tb_pal <- colorBin("BuPu", domain = TeenBirths$teen_br, bins = 5)
 
 #Drive Time
 th_iso <- mb_isochrone(TrustHerClinic,
                        profile = "driving",
                        denoise = 0.25,
-                       time = 1:15)
+                       time = 1:15,
+                       access_token = "pk.eyJ1IjoibWljaGFlbGNwYWwiLCJhIjoiY2tnMmI5ejgyMDFhZDJxdDNqZjV4cmJ1aiJ9.Wy-HsM9Q6hyabrmIezakbQ")
 
 iso_pal <- colorBin("BuPu", th_iso$time, 3, na.color = "transparent")
 
@@ -75,6 +82,8 @@ Webmap contains toggle selections in order to turn various datasets on or off de
 
 * **Trust Her Clinics:** Locations of current Trust Her clinics based on location and clinic system.
 
+* **Teen Births:** Teen Birth Rate per 10,000 women between 15 to 19 years old by zip code for 2018. This estimate may be skewed for certain zip codes as teen birth data is not provided by the state when there are fewer than 20(?) births per zip code by group, instead an NA value is given. Value currently in each zip code is a sum of teen births excluding any possible NA values.
+
 * **Car Travel Time:** Raster layer visualizing the average travel time to a Trust Her clinic within a 15 minute drive time. This layer does not account for traffic and all travel times should be evaluated based on that caveat.
 
 * **Women (15 to 49):** Census tracts layer visualizing women of reproductive age (between 15 to 49 years old) across Dallas County.
@@ -100,11 +109,25 @@ leaflet() %>%
             position = "bottomright",
             group = "Car Travel Time") %>%
   addPolygons(data = WRA,
-              stroke = FALSE, 
+              color = "#525252",
+              weight = 1,
               smoothFactor = 0.2, 
               fillOpacity = 0.6,
               fillColor = ~wra_pal(women_per),
               group = "Women (15 to 49)") %>%
+  addPolygons(data = TeenBirths,
+              stroke = TRUE,
+              color = "#525252",
+              weight = 1,
+              smoothFactor = 0.2, 
+              fillOpacity = 0.6,
+              label = paste("Teen Birth Rate:", round(TeenBirths$teen_br, digits = 1), "NA Groups:", TeenBirths$births_NA),
+              fillColor = ~tb_pal(teen_br),
+              group = "Teen Births") %>%
+  addLegend(values = TeenBirths$teen_br, pal = tb_pal,
+            position = "bottomright",
+            title = "Teen Births (Per 10k)",
+            group = "Teen Births") %>%
   addLegend(values = WRA$women_per, pal = wra_pal,
             position = "bottomright",
             title = "Percent Women (15 to 49)",
@@ -129,8 +152,9 @@ leaflet() %>%
                    fillColor = "#2f2f2f",
                    group = "DART Bus") %>%
   addLayersControl(
-    overlayGroups = c("Trust Her Clinics", "Car Travel Time", "Women (15 to 49)", "DART Bus", "DART Station"),
+    overlayGroups = c("Trust Her Clinics", "Teen Births", "Car Travel Time", "Women (15 to 49)", "DART Bus", "DART Station"),
     position = "topright",
     options = layersControlOptions(collapsed = FALSE)) %>%
-  hideGroup(c("DART Bus", "DART Station", "Women (15 to 49)"))
+  hideGroup(c("DART Bus", "DART Station", "Women (15 to 49)", "Car Travel Time"))
+
 ```
